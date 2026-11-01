@@ -1,5 +1,6 @@
 # Binaries and executables
 *.exe
+!pokemon.exe
 pokemon
 main.exe
 
