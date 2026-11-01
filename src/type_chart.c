@@ -72,3 +72,27 @@ const char *GetStatusText(StatusEffect effect)
         default:               return "";
     }
 }
+
+const char *GetStatusFullText(StatusEffect effect)
+{
+    switch (effect) {
+        case STATUS_POISON:    return "Poison";
+        case STATUS_BURN:      return "Burn";
+        case STATUS_PARALYSIS: return "Paralysis";
+        case STATUS_SLEEP:     return "Sleep";
+        case STATUS_FREEZE:    return "Freeze";
+        default:               return "None";
+    }
+}
+
+Color GetStatusColor(StatusEffect effect)
+{
+    switch (effect) {
+        case STATUS_POISON:    return (Color){168,  85, 247, 255}; // Vivid Royal Purple for Poison
+        case STATUS_BURN:      return (Color){239,  68,  68, 255}; // Bright Fiery Crimson for Burn
+        case STATUS_FREEZE:    return (Color){ 56, 189, 248, 255}; // Glowing Sky Cyan for Frozen
+        case STATUS_PARALYSIS: return (Color){255, 185,   0, 255}; // Vivid Electric Amber/Gold for Paralysis
+        case STATUS_SLEEP:     return (Color){148, 163, 184, 255}; // Cool Slate Gray for Sleep
+        default:               return BLANK;
+    }
+}

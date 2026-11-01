@@ -82,9 +82,24 @@ typedef struct Pokemon {
     int status_conditions_rounds_left;
 } Pokemon;
 
+#define MAX_PARTY_SIZE 6
+
+typedef struct Party {
+    Pokemon members[MAX_PARTY_SIZE];
+    int count;
+    int activeIndex;
+} Party;
+
+typedef enum {
+    STATE_TEAM_SELECT,
+    STATE_BATTLE,
+    STATE_SWITCH_MENU,
+    STATE_GAME_OVER
+} GameState;
+
 typedef struct BattleContext {
-    Pokemon a;
-    Pokemon b;
+    Party playerParty;
+    Party enemyParty;
     move *player_a_active_move;
     move *player_b_active_move;
 } BattleContext;

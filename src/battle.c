@@ -1,5 +1,6 @@
 #include "battle.h"
 #include "type_chart.h"
+#include "ui.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -12,8 +13,13 @@ static int minnn(int a, int b) {
 static char messageBuffer[MAX_MESSAGES][MESSAGE_SIZE];
 static int messageCount = 0;
 static int currentMessage = 0;
-static double messageStartTime = 0.0;
-static int messageTimerStarted = 0;
+static int displayedCharCount = 0;
+static double lastCharTime = 0.0;
+static double lineFinishedTime = 0.0;
+static bool lineFullyTyped = false;
+
+#define TYPEWRITER_CHAR_DELAY 0.025  // 25ms per character (smooth & readable)
+#define TYPEWRITER_LINE_WAIT   1.2   // 1.2s auto-advance
 
 void AddBattleMessage(const char *format, ...)
 {
@@ -25,39 +31,91 @@ void AddBattleMessage(const char *format, ...)
     vsnprintf(messageBuffer[messageCount], MESSAGE_SIZE, format, arguments);
     va_end(arguments);
 
+    // Strip trailing whitespace/newlines so text wraps cleanly
+    int len = (int)strlen(messageBuffer[messageCount]);
+    while (len > 0 && (messageBuffer[messageCount][len - 1] == '\n' ||
+                       messageBuffer[messageCount][len - 1] == '\r' ||
+                       messageBuffer[messageCount][len - 1] == ' '))
+    {
+        messageBuffer[messageCount][len - 1] = '\0';
+        len--;
+    }
+
     messageCount++;
+}
+
+bool IsBattleMessageActive(void)
+{
+    return (currentMessage < messageCount);
+}
+
+void ClearBattleMessages(void)
+{
+    messageCount = 0;
+    currentMessage = 0;
+    displayedCharCount = 0;
+    lineFullyTyped = false;
 }
 
 int UpdateBattleMessages(void)
 {
-    /* No active messages */
     if (currentMessage >= messageCount) {
         messageCount = 0;
         currentMessage = 0;
-        messageTimerStarted = 0;
+        displayedCharCount = 0;
+        lineFullyTyped = false;
         return 0;
     }
 
-    /* Start timer for the current message */
-    if (!messageTimerStarted) {
-        messageStartTime = GetTime();
-        messageTimerStarted = 1;
+    const char *fullMsg = messageBuffer[currentMessage];
+    int len = (int)strlen(fullMsg);
+    if (len == 0) {
+        currentMessage++;
+        return (currentMessage < messageCount);
     }
 
-    /* Move to the next message after one second */
-    if (GetTime() - messageStartTime >= MESSAGE_DURATION) {
-        currentMessage++;
-        messageTimerStarted = 0;
+    // Check if user requests skip / instant advance
+    bool advanceKey = IsKeyPressed(KEY_SPACE) ||
+                      IsKeyPressed(KEY_ENTER) ||
+                      IsKeyPressed(KEY_Z) ||
+                      IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
 
-        /* All messages are finished */
-        if (currentMessage >= messageCount) {
-            messageCount = 0;
-            currentMessage = 0;
-            return 0;
+    double now = GetTime();
+
+    if (!lineFullyTyped) {
+        if (advanceKey) {
+            // Instant reveal of current line
+            displayedCharCount = len;
+            lineFullyTyped = true;
+            lineFinishedTime = now;
+        } else {
+            if (now - lastCharTime >= TYPEWRITER_CHAR_DELAY) {
+                displayedCharCount++;
+                lastCharTime = now;
+                if (displayedCharCount >= len) {
+                    displayedCharCount = len;
+                    lineFullyTyped = true;
+                    lineFinishedTime = now;
+                }
+            }
+        }
+    } else {
+        // Line is complete: wait for key press or auto-advance timeout
+        if (advanceKey || (now - lineFinishedTime >= TYPEWRITER_LINE_WAIT)) {
+            currentMessage++;
+            displayedCharCount = 0;
+            lineFullyTyped = false;
+            lastCharTime = now;
+
+            if (currentMessage >= messageCount) {
+                messageCount = 0;
+                currentMessage = 0;
+                return 0; // Completed all queued messages
+            }
         }
     }
 
-    return 1;
+    return 1; // Still active
 }
 
 void DrawWrappedText(
@@ -67,6 +125,8 @@ void DrawWrappedText(
     int lineSpacing,
     Color color
 ) {
+    if (!text || text[0] == '\0') return;
+
     char line[1024] = "";
     char word[128] = "";
 
@@ -91,12 +151,12 @@ void DrawWrappedText(
                 else
                     snprintf(testLine, sizeof(testLine), "%s %s", line, word);
 
-                if (MeasureText(testLine, fontSize) <= area.width) {
+                if (MeasureCustomText(testLine, (float)fontSize) <= area.width) {
                     strncpy(line, testLine, sizeof(line) - 1);
                     line[sizeof(line) - 1] = '\0';
                 }
                 else {
-                    DrawText(line, (int)area.x, (int)y, fontSize, color);
+                    DrawCustomText(line, (float)area.x, (float)y, (float)fontSize, color);
                     y += fontSize + lineSpacing;
                     strncpy(line, word, sizeof(line) - 1);
                     line[sizeof(line) - 1] = '\0';
@@ -106,7 +166,7 @@ void DrawWrappedText(
             wordLength = 0;
 
             if (c == '\n') {
-                DrawText(line, (int)area.x, (int)y, fontSize, color);
+                DrawCustomText(line, (float)area.x, (float)y, (float)fontSize, color);
                 line[0] = '\0';
                 y += fontSize + lineSpacing;
             }
@@ -117,7 +177,7 @@ void DrawWrappedText(
     }
 
     if (line[0] != '\0') {
-        DrawText(line, (int)area.x, (int)y, fontSize, color);
+        DrawCustomText(line, (float)area.x, (float)y, (float)fontSize, color);
     }
 }
 
@@ -126,33 +186,44 @@ void DrawBattleTextBox(void)
     if (currentMessage >= messageCount)
         return;
 
-    float boxWidth = GetScreenWidth() / 2.0f - 40;
-    float boxHeight = GetScreenHeight() / 2.0f - 40;
-
+    // Fixed HD 1280x720 positioning for battle dialogue box
     Rectangle bar = {
-        20,
-        333,
-        boxWidth,
-        boxHeight
+        50,
+        510,
+        680,
+        180
     };
 
-    DrawRectangleRec(bar, (Color){245, 245, 235, 255});
-    DrawRectangleLinesEx(bar, 4, BLACK);
+    DrawRectangleRounded(bar, 0.05f, 6, (Color){250, 252, 255, 255});
+    DrawRectangleRoundedLines(bar, 0.05f, 6, (Color){35, 45, 60, 255});
 
     Rectangle textArea = {
-        bar.x + 15,
-        bar.y + 15,
-        bar.width - 30,
-        bar.height - 30
+        bar.x + 22,
+        bar.y + 20,
+        bar.width - 44,
+        bar.height - 40
     };
 
+    char visibleText[MESSAGE_SIZE];
+    int n = displayedCharCount;
+    if (n > (int)sizeof(visibleText) - 1) n = (int)sizeof(visibleText) - 1;
+    strncpy(visibleText, messageBuffer[currentMessage], n);
+    visibleText[n] = '\0';
+
     DrawWrappedText(
-        messageBuffer[currentMessage],
+        visibleText,
         textArea,
         22,
-        2,
-        BLACK
+        6,
+        (Color){25, 28, 32, 255}
     );
+
+    // Prompt arrow when current line has finished typing
+    if (lineFullyTyped) {
+        if ((int)(GetTime() * 3.5) % 2 == 0) {
+            DrawCustomText("v", bar.x + bar.width - 30, bar.y + bar.height - 32, 20, (Color){220, 50, 50, 255});
+        }
+    }
 }
 
 int damage_calculator(Pokemon *pokemon, Pokemon *pokemonB, move *Move, double random_factor)
@@ -338,4 +409,55 @@ void turn_processing(Pokemon *A, Pokemon *B, move *MoveA)
         else if (effectiveness < 1.0)
             AddBattleMessage("It was not very effective!\n");
     }
+}
+
+bool PrepareTurnAction(Pokemon *attacker, Pokemon *defender, move *Move, TurnAction *action)
+{
+    if (!attacker || !defender || !Move || !action)
+        return false;
+
+    action->attacker = attacker;
+    action->defender = defender;
+    action->usedMove = Move;
+    action->damage = 0;
+    action->effectiveness = 1.0;
+    action->missed = false;
+    action->isStatusOnly = false;
+
+    if (Move->Current_PP <= 0) {
+        return false;
+    }
+
+    Move->Current_PP--;
+
+    if (defender->evasiveness <= 0) defender->evasiveness = 1;
+    int accuracy = Move->Accuracy * attacker->accuracy / defender->evasiveness;
+    if (accuracy > 100) accuracy = 100;
+
+    if (rand() % 100 >= accuracy) {
+        action->missed = true;
+        return true;
+    }
+
+    double random_factor = ((rand() % 39) + 217) / 255.0;
+
+    if (Move->category == CATEGORY_PHYSICAL) {
+        action->damage = damage_calculator(attacker, defender, Move, random_factor);
+        move_status_effect_processing(attacker, defender, Move);
+    }
+    else if (Move->category == CATEGORY_SPECIAL) {
+        action->damage = special_damage_calculator(attacker, defender, Move, random_factor);
+        move_status_effect_processing(attacker, defender, Move);
+    }
+    else {
+        action->isStatusOnly = true;
+        move_status_effect_processing(attacker, defender, Move);
+        return true;
+    }
+
+    action->effectiveness =
+        type_effectiveness(Move->type, defender->type1) *
+        type_effectiveness(Move->type, defender->type2);
+
+    return true;
 }
