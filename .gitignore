@@ -1,0 +1,15 @@
+# Binaries and executables
+*.exe
+pokemon
+main.exe
+
+# Build objects
+*.o
+*.obj
+*.a
+
+# Logs and temp
+*.log
+*.swp
+*.tmp
+.vscode/
