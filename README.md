@@ -124,7 +124,8 @@ Pokemon Phoenix Red/
 │   └── download_sprites.py
 ├── build.bat                 # Windows build script
 ├── build.sh                  # Linux build script
-├── pokemon.exe               # Ready-to-play Windows executable
+├── pokemon.exe               # Ready-to-play Windows executable (Raylib statically linked)
+├── glfw3.dll                 # Portable GLFW runtime (bundled for Windows plug-and-play)
 ├── .gitignore
 └── README.md
 ```
